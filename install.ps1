@@ -1,0 +1,119 @@
+﻿# ============================================================================
+#  DeepSeek Harness 安装脚本
+#  作用：
+#    1. 检查 Node.js / npm 环境
+#    2. 安装 DeepSeek Harness (dsh)：npm install -g @deepseek-ai/dsh
+#       （若全局安装失败，则回退为预热 npx 缓存，保证启动命令
+#        npx @deepseek-ai/dsh web 可用）
+#    3. 复制启动器 / 图标 / 卸载脚本 / 说明到 %LOCALAPPDATA%\DeepSeek Harness
+#    4. 在桌面创建 “DeepSeek Harness” 快捷方式（一键启动）
+#    5. （可选）安装完成后立即启动
+#
+#  用法： 双击 install.bat，或在 PowerShell 中执行本脚本
+#         支持参数：-SkipStart （跳过“是否立即启动”询问，供静默安装）
+# ============================================================================
+param(
+    [switch]$SkipStart
+)
+
+$ErrorActionPreference = 'Stop'
+
+$AppName    = 'DeepSeek Harness'
+$Package    = '@deepseek-ai/dsh'
+$InstallDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) $AppName
+$ScriptDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+# ---------------------------------------------------------------------------
+# 弹窗提示
+# ---------------------------------------------------------------------------
+function Show-Message {
+    param([string]$Text, [string]$Title = $AppName, [string]$Kind = 'Info')
+    try {
+        Add-Type -AssemblyName System.Windows.Forms | Out-Null
+        $icon = [System.Windows.Forms.MessageBoxIcon]::Information
+        if ($Kind -eq 'Error') { $icon = [System.Windows.Forms.MessageBoxIcon]::Error }
+        [System.Windows.Forms.MessageBox]::Show($Text, $Title, [System.Windows.Forms.MessageBoxButtons]::OK, $icon) | Out-Null
+    } catch {
+        Write-Host $Text
+    }
+}
+
+# ---------------------------------------------------------------------------
+# 主流程
+# ---------------------------------------------------------------------------
+try {
+    # 1) 检查环境：Node.js / npm
+    $node = Get-Command 'node' -ErrorAction SilentlyContinue
+    $npm  = Get-Command 'npm'  -ErrorAction SilentlyContinue
+    if (-not $node) {
+        Show-Message -Text "未检测到 Node.js。`n请先安装 Node.js (LTS)：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
+        exit 1
+    }
+    if (-not $npm) {
+        Show-Message -Text "未检测到 npm。`n请重新安装 Node.js（安装包自带 npm）。" -Kind 'Error'
+        exit 1
+    }
+    Write-Host "[$AppName] Node.js: $(& node --version)   npm: $(& npm --version)"
+
+    # 2) 安装 DeepSeek Harness
+    Write-Host "[$AppName] 正在安装 $Package （npm install -g $Package）..."
+    & npm install -g $Package
+    if ($LASTEXITCODE -ne 0) {
+        # 回退：全局安装未成功（可能是权限 / 网络问题），改用 npx 预热缓存，
+        # 确保 npx @deepseek-ai/dsh web 可用
+        Write-Host "[$AppName] 全局安装未成功，正在通过 npx 预热缓存..."
+        & npx -y $Package --version 2>&1 | Out-Null
+        $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
+        $cached  = Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "node_modules\$Package") } |
+            Select-Object -First 1
+        if (-not $cached) {
+            Show-Message -Text "DeepSeek Harness 安装失败。`n请检查网络连接后重试。" -Kind 'Error'
+            exit 1
+        }
+        Write-Host "[$AppName] 已通过 npx 完成安装（缓存：$($cached.Name)）。"
+    } else {
+        Write-Host "[$AppName] 全局安装完成，命令 dsh 已可用（启动命令：npx @deepseek-ai/dsh web）。"
+    }
+
+    # 3) 复制文件到安装目录
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'uninstall.bat', 'uninstall.ps1', 'README.md') {
+        $src = Join-Path $ScriptDir $f
+        if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $InstallDir -Force }
+    }
+    Write-Host "[$AppName] 文件已安装到: $InstallDir"
+
+    # 4) 创建桌面快捷方式
+    $desktop = [Environment]::GetFolderPath('Desktop')
+    $lnkPath = Join-Path $desktop "$AppName.lnk"
+    $ws = New-Object -ComObject WScript.Shell
+    $sc = $ws.CreateShortcut($lnkPath)
+    $sc.TargetPath       = 'powershell.exe'
+    $sc.Arguments        = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir 'DSH-Launcher.ps1') + '"'
+    $sc.WorkingDirectory = $InstallDir
+    $sc.IconLocation     = Join-Path $InstallDir 'DSH-whale-official.ico'
+    $sc.Description      = 'One-click launch of DeepSeek Harness Web GUI (npx @deepseek-ai/dsh web -> http://127.0.0.1:3080)'
+    $sc.Save()
+    Write-Host "[$AppName] 桌面快捷方式已创建: $lnkPath"
+
+    # 5) 完成提示
+    Write-Host "[$AppName] 安装完成！启动命令：npx @deepseek-ai/dsh web"
+    Show-Message -Text "安装完成！`n`n桌面已创建 “$AppName” 快捷方式，双击即可启动。`n`n启动命令：npx @deepseek-ai/dsh web`n安装位置：$InstallDir"
+
+    # 6) 询问是否立即启动
+    if (-not $SkipStart) {
+        try {
+            $ans = Read-Host "是否立即启动 DeepSeek Harness？(Y/N，默认 N)"
+        } catch {
+            $ans = 'n'
+        }
+        if ($ans -match '^[Yy]') {
+            Write-Host "[$AppName] 正在启动..."
+            & (Join-Path $InstallDir 'DSH-Launcher.ps1')
+        }
+    }
+} catch {
+    Show-Message -Text ("安装失败：`n" + $_.Exception.Message) -Kind 'Error'
+    exit 1
+}

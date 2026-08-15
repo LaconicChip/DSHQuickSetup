@@ -1,0 +1,17 @@
+# Windows
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# macOS
+.DS_Store
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# 构建产物 / 本地分发包
+*.zip
+
+# 开发交接笔记（含本机路径，勿提交）
+TESTING-NOTES.md
