@@ -2,7 +2,7 @@
 
 > DeepSeek-Harness-Setup — 在 Windows 上通过**双击 .bat 文件**即可完成 [DeepSeek Harness](https://www.npmjs.com/package/@deepseek-ai/dsh) 的 **安装 / 启动 / 停止 / 卸载**，无需记忆任何命令。
 
-**启动命令：`npx @deepseek-ai/dsh web`**（安装后亦可直接使用 `dsh web`）
+**启动命令：`npx @deepseek-ai/dsh web`**（每次启动自动更新到最新版；如需离线固定版本可用 `-PreferGlobal` 走全局 `dsh web`）
 
 ---
 
@@ -54,7 +54,7 @@
 
 ## ⚙️ 工作原理
 
-- **启动命令**：优先使用已全局安装的 `dsh web`（更快、可离线）；未安装时回退 `npx -y @deepseek-ai/dsh web`（自动下载 / 使用缓存）。
+- **启动命令（自动更新）**：默认使用 `npx -y @deepseek-ai/dsh web`——每次启动都会向 npm registry 检查并**自动更新到最新版**，适合快速迭代的项目。若需要更快、可离线的固定版本，可用 `-PreferGlobal` 改用已全局安装的 `dsh web`（`powershell -File DSH-Launcher.ps1 -PreferGlobal`），或当 npx 不可用时自动回退全局 dsh。
 - **端口检测**：基于 TCP 连接测试检测 `127.0.0.1:3080`（比系统网络 cmdlet 更可靠，受限环境下依然有效）。
 - **等待机制**：服务器在独立控制台窗口（标题 "DSH Web Server"）中运行，服务停止后窗口自动关闭；启动进程提前退出（如 npx 下载失败）时立即弹窗报错，无需等待超时。
 - **超时设置**：默认等待 600 秒，可自定义：`powershell -File DSH-Launcher.ps1 -TimeoutS 1800`。
@@ -77,6 +77,9 @@ A：检查 3080 端口是否被其它程序占用（`netstat -ano | findstr :308
 
 **Q：首次启动很慢？**
 A：首次运行需下载 dsh 包，与网速相关；启动器默认最多等待 600 秒，可调大：`powershell -File DSH-Launcher.ps1 -TimeoutS 1800`。
+
+**Q：如何保证用的是最新版 dsh？**
+A：启动器默认用 `npx -y @deepseek-ai/dsh web`，每次启动都会检查并自动更新到最新版。若你更看重速度/离线可用而接受固定版本，加 `-PreferGlobal` 改用全局安装的 dsh。
 
 **Q：卸载之后想重新使用？**
 A：重新双击 `install.bat` 即可，全程幂等。

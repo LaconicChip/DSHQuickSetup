@@ -4,15 +4,18 @@
 #  功能：
 #    1. 检查 http://127.0.0.1:3080 是否已在运行
 #    2. 若未运行，自动执行启动命令：
-#         npx -y @deepseek-ai/dsh web
-#       （若已全局安装 dsh，则使用 dsh web，更快、可离线）
+#         npx -y @deepseek-ai/dsh web      ← 默认，每次启动自动更新到最新版
+#       （可加 -PreferGlobal 改用已全局安装的 dsh web：更快、可离线，但版本固定）
 #    3. 在默认浏览器中打开 GUI
 #
 #  用法： 双击桌面快捷方式 / start.bat，或在 PowerShell 中执行本脚本
-#         可选参数：-TimeoutS <秒>（等待服务器启动的最长时间，默认 600 秒）
+#         可选参数：
+#           -TimeoutS <秒>     等待服务器启动的最长时间，默认 600 秒
+#           -PreferGlobal      优先使用全局安装的 dsh（不自动更新，离线可用）
 # ============================================================================
 param(
-    [int]$TimeoutS = 600   # 秒；首次 npx 下载可能较慢，默认给足 10 分钟
+    [int]$TimeoutS = 600,      # 秒；首次 npx 下载可能较慢，默认给足 10 分钟
+    [switch]$PreferGlobal      # 优先全局 dsh web（版本固定），默认用 npx 自动更新
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,14 +87,20 @@ if (Test-PortListening -TargetPort $Port) {
 } else {
     Write-Host "[DSH] 未检测到运行中的 GUI，正在启动 DSH Web 服务器..."
 
-    # 构造启动命令：优先已全局安装的 dsh，否则 npx（自动下载 / 使用缓存）
+    # 构造启动命令：
+    #   默认 → npx -y @deepseek-ai/dsh web：每次启动检查 registry 并自动更新到最新版
+    #   （-PreferGlobal 或没有 npx 时 → 已全局安装的 dsh web：更快、可离线，但版本固定）
+    $npx = Get-Command 'npx.cmd' -ErrorAction SilentlyContinue
     $dsh = Find-DshCommand
-    if ($dsh) {
-        $startLine = 'title DSH Web Server && "' + $dsh + '" web'
-        Write-Host "[DSH] 使用命令：$dsh web"
-    } else {
+    if (-not $PreferGlobal -and $npx) {
         $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
-        Write-Host "[DSH] 使用命令：npx -y @deepseek-ai/dsh web"
+        Write-Host "[DSH] 使用命令：npx -y @deepseek-ai/dsh web（自动更新到最新版）"
+    } elseif ($dsh) {
+        $startLine = 'title DSH Web Server && "' + $dsh + '" web'
+        Write-Host "[DSH] 使用命令：$dsh web（全局版本，不自动更新）"
+    } else {
+        Show-Message -Text "未找到 npx 或 dsh。`n请先安装 Node.js：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
+        exit 1
     }
 
     # 在独立控制台窗口启动服务器（关闭该窗口即停止服务；
