@@ -101,11 +101,11 @@ foreach ($procId in $pids) {
     }
 }
 
-# 2) 卸载 npm 全局包
-Write-Host "[$AppName] 正在卸载全局包: npm uninstall -g $Package"
+# 2) 卸载 npm 全局包（兼容旧版本：新版安装不产生全局包，若仍存在则一并卸载）
+Write-Host "[$AppName] 卸载 npm 全局包（若存在）: npm uninstall -g $Package"
 & npm uninstall -g $Package 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "[$AppName] 警告：npm 卸载返回非零退出码（可能未全局安装，可忽略）。"
+    Write-Host "[$AppName] 警告：npm 卸载返回非零退出码（未全局安装，可忽略）。"
 }
 
 # 3) 删除桌面快捷方式

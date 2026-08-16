@@ -10,10 +10,10 @@
 
 | 入口 | 功能 |
 | --- | --- |
-| `install.bat` | **一键安装**：自动执行 `npm install -g @deepseek-ai/dsh`，复制启动器文件到 `%LOCALAPPDATA%\DeepSeek Harness`，并在桌面创建 "DeepSeek Harness" 快捷方式（官方鲸鱼图标） |
+| `install.bat` | **一键安装**：通过 npx 下载/校验 dsh（不安装全局固定版本，始终以最新版为准），复制启动器文件到 `%LOCALAPPDATA%\DeepSeek Harness`，并在桌面创建 "DeepSeek Harness" 快捷方式（官方鲸鱼图标） |
 | `start.bat` / 桌面快捷方式 | **一键启动**：检测 `http://127.0.0.1:3080` 是否已运行；未运行则自动执行启动命令并等待服务就绪（默认最多 600 秒，可用 `-TimeoutS` 调整），随后在浏览器中打开 GUI |
 | `stop.bat` | **一键停止**：停止占用 3080 端口的 DSH Web 服务器，"DSH Web Server" 窗口自动关闭 |
-| `uninstall.bat` | **一键卸载**：停止服务器 → 卸载 npm 全局包 → 删除桌面快捷方式与安装目录 → 清理 npx 缓存 |
+| `uninstall.bat` | **一键卸载**：停止服务器 → 卸载 npm 全局包（若存在）→ 删除桌面快捷方式与安装目录 → 清理 npx 缓存 |
 
 其它特点：
 
@@ -21,7 +21,7 @@
 - ✅ 幂等安装：重复执行安全，自动覆盖旧文件
 - ✅ 启动失败即时反馈：下载失败 / 命令报错立即弹窗，不会空等
 - ✅ 卸载保护：清理 npx 缓存时自动跳过「正在被进程使用」的条目，不破坏运行中的 dsh 环境
-- ✅ 无需管理员权限：npm 全局包安装在用户目录
+- ✅ 无需管理员权限：npx 缓存位于用户目录，不安装全局包
 - ✅ 卸载不删除用户数据（`DSH_HOME` 中的会话与配置）
 
 ## 📋 环境要求
@@ -33,7 +33,7 @@
 
 ```text
 1. 下载本项目（解压 zip 或 git clone）
-2. 双击 install.bat        —— 安装（安装 dsh + 创建桌面快捷方式）
+2. 双击 install.bat        —— 安装（npx 下载/校验 dsh + 创建桌面快捷方式）
 3. 双击桌面 "DeepSeek Harness" 快捷方式（或 start.bat）—— 启动并打开浏览器
 4. 需要停止时双击 stop.bat；需要卸载时双击 uninstall.bat
 ```
@@ -55,6 +55,7 @@
 ## ⚙️ 工作原理
 
 - **启动命令（自动更新）**：默认使用 `npx -y @deepseek-ai/dsh web`——每次启动都会向 npm registry 检查并**自动更新到最新版**，适合快速迭代的项目。若需要更快、可离线的固定版本，可用 `-PreferGlobal` 改用已全局安装的 `dsh web`（`powershell -File DSH-Launcher.ps1 -PreferGlobal`），或当 npx 不可用时自动回退全局 dsh。
+- **安装方式（同样 npx）**：`install.bat` 通过 `npx -y @deepseek-ai/dsh --version` 下载并校验 dsh 到 npx 缓存，**不安装全局固定版本**——保证安装与启动统一走 npx、始终最新。
 - **端口检测**：基于 TCP 连接测试检测 `127.0.0.1:3080`（比系统网络 cmdlet 更可靠，受限环境下依然有效）。
 - **等待机制**：服务器在独立控制台窗口（标题 "DSH Web Server"）中运行，服务停止后窗口自动关闭；启动进程提前退出（如 npx 下载失败）时立即弹窗报错，无需等待超时。
 - **超时设置**：默认等待 600 秒，可自定义：`powershell -File DSH-Launcher.ps1 -TimeoutS 1800`。
@@ -64,7 +65,7 @@
 ## 🧹 卸载说明
 
 - 推荐方式：双击 `uninstall.bat`（会询问确认；静默执行可用 `uninstall.ps1 -Force`）。
-- 卸载内容：停止服务器 → `npm uninstall -g @deepseek-ai/dsh` → 删除桌面快捷方式 → 删除安装目录 → 清理 npx 缓存。
+- 卸载内容：停止服务器 → 卸载 npm 全局包（仅当存在旧版全局安装时）→ 删除桌面快捷方式 → 删除安装目录 → 清理 npx 缓存。
 - **不删除**：`DSH_HOME`（默认 `%USERPROFILE%\.dsh`）中的会话数据与用户配置。
 
 ## ❓ 常见问题

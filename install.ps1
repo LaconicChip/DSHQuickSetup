@@ -2,9 +2,9 @@
 #  DeepSeek Harness 安装脚本
 #  作用：
 #    1. 检查 Node.js / npm 环境
-#    2. 安装 DeepSeek Harness (dsh)：npm install -g @deepseek-ai/dsh
-#       （若全局安装失败，则回退为预热 npx 缓存，保证启动命令
-#        npx @deepseek-ai/dsh web 可用）
+#    2. 安装 DeepSeek Harness (dsh)：通过 npx 预热缓存并验证可用
+#       （npx @deepseek-ai/dsh web 启动时每次都会自动更新到最新版，
+#        这里只做首次下载与可用性校验，不安装全局固定版本）
 #    3. 复制启动器 / 图标 / 卸载脚本 / 说明到 %LOCALAPPDATA%\DeepSeek Harness
 #    4. 在桌面创建 “DeepSeek Harness” 快捷方式（一键启动）
 #    5. （可选）安装完成后立即启动
@@ -55,26 +55,19 @@ try {
     }
     Write-Host "[$AppName] Node.js: $(& node --version)   npm: $(& npm --version)"
 
-    # 2) 安装 DeepSeek Harness
-    Write-Host "[$AppName] 正在安装 $Package （npm install -g $Package）..."
-    & npm install -g $Package
-    if ($LASTEXITCODE -ne 0) {
-        # 回退：全局安装未成功（可能是权限 / 网络问题），改用 npx 预热缓存，
-        # 确保 npx @deepseek-ai/dsh web 可用
-        Write-Host "[$AppName] 全局安装未成功，正在通过 npx 预热缓存..."
-        & npx -y $Package --version 2>&1 | Out-Null
-        $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
-        $cached  = Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue |
-            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "node_modules\$Package") } |
-            Select-Object -First 1
-        if (-not $cached) {
-            Show-Message -Text "DeepSeek Harness 安装失败。`n请检查网络连接后重试。" -Kind 'Error'
-            exit 1
-        }
-        Write-Host "[$AppName] 已通过 npx 完成安装（缓存：$($cached.Name)）。"
-    } else {
-        Write-Host "[$AppName] 全局安装完成，命令 dsh 已可用（启动命令：npx @deepseek-ai/dsh web）。"
+    # 2) 安装 DeepSeek Harness（npx 方式，始终最新）
+    #    通过 npx 下载 / 校验包（下载到 npx 缓存）；启动时 npx 会再次检查并自动更新。
+    Write-Host "[$AppName] 正在通过 npx 安装 $Package （首次会自动下载到 npx 缓存）..."
+    & npx -y $Package --version 2>&1 | Out-Null
+    $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
+    $cached  = Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "node_modules\$Package") } |
+        Select-Object -First 1
+    if (-not $cached) {
+        Show-Message -Text "DeepSeek Harness 安装失败。`n请检查网络连接后重试。" -Kind 'Error'
+        exit 1
     }
+    Write-Host "[$AppName] 安装完成（npx 缓存：$($cached.Name)）。"
 
     # 3) 复制文件到安装目录
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
