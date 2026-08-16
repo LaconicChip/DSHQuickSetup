@@ -2,7 +2,7 @@
 #  DeepSeek Harness 卸载脚本
 #  作用：
 #    1. 停止正在运行的 DSH Web 服务器（端口 3080）
-#    2. 卸载全局包：npm uninstall -g @deepseek-ai/dsh
+#    2. 清理 dsh 相关安装产物：npx 缓存条目 + 旧版全局包（若存在）
 #    3. 删除桌面快捷方式 “DeepSeek Harness”
 #    4. 删除安装目录 %LOCALAPPDATA%\DeepSeek Harness
 #    5. 清理 npx 缓存中的 dsh 条目（尽力而为；卸载开始时正被进程占用的条目会跳过）
@@ -43,7 +43,7 @@ Write-Host "[$AppName] 开始卸载..."
 # 0) 确认（除非 -Force）
 if (-not $Force) {
     try {
-        $ans = Read-Host "将停止服务器、卸载 npm 全局包 $Package 并删除全部文件。`n确定继续吗？(Y/N)"
+        $ans = Read-Host "将停止服务器、卸载 dsh（清理 npx 缓存与旧版全局包）并删除全部文件。`n确定继续吗？(Y/N)"
     } catch {
         $ans = 'n'
     }
@@ -147,4 +147,4 @@ if (Test-Path -LiteralPath $npxRoot) {
 
 # 6) 完成提示
 Write-Host "[$AppName] 卸载完成。"
-Show-Message -Text "卸载完成！`n`n已停止服务器、卸载 npm 包、删除快捷方式与安装文件。"
+Show-Message -Text "卸载完成！`n`n已停止服务器、删除快捷方式与安装文件，并清理 npx 缓存中的 dsh。"
