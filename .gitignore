@@ -15,3 +15,7 @@ npm-debug.log*
 
 # 开发交接笔记（含本机路径，勿提交）
 TESTING-NOTES.md
+
+# 内部开发文档与测试产物（勿提交）
+docs/
+路径覆盖测试报告.md

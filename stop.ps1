@@ -25,7 +25,7 @@ function Get-PortPids {
     return @($lines | ForEach-Object {
         $tokens = ($_ -split '\s+') | Where-Object { $_ }
         $last   = $tokens[$tokens.Count - 1]
-        if ($last -match '^\d+$') { [int]$last }
+        if ($last -match '^[1-9]\d*$') { [int]$last }   # 过滤 PID 0（系统占位，无法操作）
     } | Sort-Object -Unique)
 }
 
@@ -41,7 +41,9 @@ foreach ($procId in $pids) {
         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         Write-Host "[$AppName] 已停止服务器进程 (PID $procId)"
         $stopped = $true
-    } elseif (-not $proc) {
+    } elseif ($proc) {
+        Write-Host "[$AppName] 端口 $Port 被非 DSH 进程占用 (PID $procId)，已跳过。如需释放端口请手动处理该进程。"
+    } else {
         Write-Host "[$AppName] 端口 $Port 上的进程 (PID $procId) 无法读取信息，跳过（请确认是否为 dsh 服务器）"
     }
 }

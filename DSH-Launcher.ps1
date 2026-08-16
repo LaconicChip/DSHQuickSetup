@@ -20,6 +20,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$AppName = 'DeepSeek Harness'
 $GuiUrl = 'http://127.0.0.1:3080'
 $Port   = 3080
 
@@ -43,16 +44,12 @@ function Test-PortListening {
 # 定位 dsh 命令行（优先 PATH 上已全局安装的 dsh.cmd / dsh.ps1）
 # ----------------------------------------------------------------------------
 function Find-DshCommand {
-    $cmd = Get-Command 'dsh.cmd' -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-
-    $ps1 = Get-Command 'dsh.ps1' -ErrorAction SilentlyContinue
-    if ($ps1) {
-        $cmdPath = [System.IO.Path]::ChangeExtension($ps1.Source, '.cmd')
-        if (Test-Path -LiteralPath $cmdPath) { return $cmdPath }
-        return $ps1.Source
+    # 仅返回可被 cmd.exe 直接执行的形式（.cmd/.bat/.exe）。
+    # 只有 dsh.ps1 时无法用于 cmd /c 启动行，返回 $null。
+    foreach ($name in 'dsh.cmd', 'dsh.bat', 'dsh.exe') {
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
     }
-
     return $null
 }
 
@@ -89,8 +86,11 @@ if (Test-PortListening -TargetPort $Port) {
 
     # 构造启动命令：
     #   默认 → npx -y @deepseek-ai/dsh web：每次启动检查 registry 并自动更新到最新版
-    #   （-PreferGlobal 或没有 npx 时 → 已全局安装的 dsh web：更快、可离线，但版本固定）
-    $npx = Get-Command 'npx.cmd' -ErrorAction SilentlyContinue
+    #   （-PreferGlobal → 已全局安装的 dsh web：更快、可离线，但版本固定；
+    #    无全局 dsh 或没有 npx 时自动回退）
+    #   CommandType Application 只匹配 cmd.exe 可直接执行的形式（.cmd/.bat/.exe），
+    #   不会误匹配仅有的 npx.ps1（cmd /c 无法执行 .ps1）
+    $npx = Get-Command 'npx' -CommandType Application -ErrorAction SilentlyContinue
     $dsh = Find-DshCommand
     if (-not $PreferGlobal -and $npx) {
         $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
@@ -98,6 +98,10 @@ if (Test-PortListening -TargetPort $Port) {
     } elseif ($dsh) {
         $startLine = 'title DSH Web Server && "' + $dsh + '" web'
         Write-Host "[DSH] 使用命令：$dsh web（全局版本，不自动更新）"
+    } elseif ($npx) {
+        # -PreferGlobal 但未找到全局 dsh：回退 npx
+        $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
+        Write-Host "[DSH] 未找到全局 dsh，改用：npx -y @deepseek-ai/dsh web"
     } else {
         Show-Message -Text "未找到 npx 或 dsh。`n请先安装 Node.js：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
         exit 1
@@ -105,8 +109,11 @@ if (Test-PortListening -TargetPort $Port) {
 
     # 在独立控制台窗口启动服务器（关闭该窗口即停止服务；
     # 服务停止或启动命令退出时窗口会自动关闭）
+    # 固定工作目录到安装目录（不存在时回退用户目录），避免继承调用方 cwd
+    $workDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) $AppName
+    if (-not (Test-Path -LiteralPath $workDir)) { $workDir = $env:USERPROFILE }
     try {
-        $serverProc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $startLine -PassThru
+        $serverProc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $startLine -WorkingDirectory $workDir -PassThru
     } catch {
         Show-Message -Text ("启动 dsh web 失败：`n" + $_.Exception.Message) -Kind 'Error'
         exit 1

@@ -57,21 +57,42 @@ try {
 
     # 2) 安装 DeepSeek Harness（npx 方式，始终最新）
     #    通过 npx 下载 / 校验包（下载到 npx 缓存）；启动时 npx 会再次检查并自动更新。
+    #    成败只以 npx 退出码为准：npx 向 stderr 输出的警告（npm WARN 等）不代表失败。
     Write-Host "[$AppName] 正在通过 npx 安装 $Package （首次会自动下载到 npx 缓存）..."
-    & npx -y $Package --version 2>&1 | Out-Null
-    $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
+    # 局部放宽 EAP：Windows PowerShell 5.1 在 EAP=Stop 时会把原生命令的 stderr
+    # 输出升级为终止性 NativeCommandError，导致安装被误判失败
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & npx -y $Package --version | Out-Null
+        $npxExit = $LASTEXITCODE
+        # npx 缓存根：优先读 npm 实际配置（支持自定义 cache 路径），读不到回退默认位置
+        $cacheRoot = Join-Path $env:LOCALAPPDATA 'npm-cache'
+        $cfgCache  = & npm config get cache 2>$null
+        if ($LASTEXITCODE -eq 0 -and $cfgCache) {
+            $cfgCache = ([string]@($cfgCache)[0]).Trim()
+            if ($cfgCache -and (Test-Path -LiteralPath $cfgCache)) { $cacheRoot = $cfgCache }
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    if ($npxExit -ne 0) {
+        Show-Message -Text "DeepSeek Harness 安装失败（npx 退出码 $npxExit）。`n请检查网络连接后重试。" -Kind 'Error'
+        exit 1
+    }
+    $npxRoot = Join-Path $cacheRoot '_npx'
     $cached  = Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue |
         Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName "node_modules\$Package") } |
         Select-Object -First 1
     if (-not $cached) {
-        Show-Message -Text "DeepSeek Harness 安装失败。`n请检查网络连接后重试。" -Kind 'Error'
+        Show-Message -Text "DeepSeek Harness 安装失败。`n未能在 npx 缓存中定位 $Package，请检查网络与 npm 缓存配置后重试。" -Kind 'Error'
         exit 1
     }
     Write-Host "[$AppName] 安装完成（npx 缓存：$($cached.Name)）。"
 
     # 3) 复制文件到安装目录
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'uninstall.bat', 'uninstall.ps1', 'README.md') {
+    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'DSH Manager.bat', 'DSH-Manager.ps1', 'uninstall.ps1', 'README.md') {
         $src = Join-Path $ScriptDir $f
         if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $InstallDir -Force }
     }

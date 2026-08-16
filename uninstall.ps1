@@ -68,14 +68,22 @@ function Get-PortPids {
     return @($lines | ForEach-Object {
         $tokens = ($_ -split '\s+') | Where-Object { $_ }
         $last   = $tokens[$tokens.Count - 1]
-        if ($last -match '^\d+$') { [int]$last }
+        if ($last -match '^[1-9]\d*$') { [int]$last }   # 过滤 PID 0（系统占位，无法操作）
     } | Sort-Object -Unique)
 }
 
 # 0.5) 在停服之前捕获“正在被进程占用的 npx 缓存目录”。
 #      必须在停服前捕获：第 1 步会杀掉 dsh 服务器，若服务器正从 npx 缓存运行，
 #      停服后实时占用检测就会失效，导致误删正在使用的 harness 运行环境。
+# npx 缓存根：优先读 npm 实际配置（支持自定义 cache 路径），读不到回退默认位置
 $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
+if (Get-Command 'npm' -ErrorAction SilentlyContinue) {
+    $cfgCache = & npm config get cache 2>$null
+    if ($LASTEXITCODE -eq 0 -and $cfgCache) {
+        $cfgCache = ([string]@($cfgCache)[0]).Trim()
+        if ($cfgCache) { $npxRoot = Join-Path $cfgCache '_npx' }
+    }
+}
 $inUseCacheDirs = @()
 if (Test-Path -LiteralPath $npxRoot) {
     $inUseCacheDirs = @(Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
@@ -96,16 +104,22 @@ foreach ($procId in $pids) {
     if ($proc -and $proc.CommandLine -match 'dsh') {
         Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         Write-Host "[$AppName] 已停止服务器进程 (PID $procId)"
-    } elseif (-not $proc) {
+    } elseif ($proc) {
+        Write-Host "[$AppName] 端口 3080 被非 DSH 进程占用 (PID $procId)，已跳过。"
+    } else {
         Write-Host "[$AppName] 端口 3080 上的进程 (PID $procId) 无法读取信息，跳过（请确认是否为 dsh 服务器）"
     }
 }
 
 # 2) 卸载 npm 全局包（兼容旧版本：新版安装不产生全局包，若仍存在则一并卸载）
-Write-Host "[$AppName] 卸载 npm 全局包（若存在）: npm uninstall -g $Package"
-& npm uninstall -g $Package 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "[$AppName] 警告：npm 卸载返回非零退出码（未全局安装，可忽略）。"
+if (Get-Command 'npm' -ErrorAction SilentlyContinue) {
+    Write-Host "[$AppName] 卸载 npm 全局包（若存在）: npm uninstall -g $Package"
+    & npm uninstall -g $Package 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "[$AppName] 警告：npm 卸载返回非零退出码（未全局安装，可忽略）。"
+    }
+} else {
+    Write-Host "[$AppName] 未检测到 npm，跳过 npm 全局包卸载。"
 }
 
 # 3) 删除桌面快捷方式
