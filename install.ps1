@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 #  DeepSeek Harness 安装脚本
 #  作用：
 #    1. 检查 Node.js / npm 环境
@@ -135,7 +135,8 @@ try {
         $src = Join-Path $ScriptDir $f
         $dst = Join-Path $InstallDir $f
         # 跳过源==目标（在安装目录内重跑 install 时自身复制会报错）
-        if (Test-Path -LiteralPath $src -and -not [string]::Equals($src, $dst, [System.StringComparison]::OrdinalIgnoreCase)) {
+        # 注：Test-Path 需用括号括起作为独立子表达式，否则 PS 5.1 会把 -and 误解析为参数
+        if ((Test-Path -LiteralPath $src) -and -not [string]::Equals($src, $dst, [System.StringComparison]::OrdinalIgnoreCase)) {
             Copy-Item -LiteralPath $src -Destination $InstallDir -Force
         }
     }
