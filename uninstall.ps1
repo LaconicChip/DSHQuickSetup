@@ -159,6 +159,53 @@ if (Test-Path -LiteralPath $npxRoot) {
     }
 }
 
-# 6) 完成提示
+# 6) 用户数据（可选，默认保留）
+#    包含对话记录（会话历史）、配置文件等；删除后不可恢复
+$dataHome  = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
+$removeData = $false
+if (-not $Force) {
+    Write-Host ""
+    Write-Host "是否同时删除用户数据？位于: $dataHome"
+    Write-Host "  用户数据包括：对话记录（会话历史）、配置文件等。"
+    Write-Host "  - 删除：可释放磁盘空间，但历史会话与个性化设置将无法恢复。"
+    Write-Host "  - 保留：重新安装后可继续使用原有会话与设置（推荐）。"
+    try {
+        $ans = Read-Host "确定删除用户数据吗？(y/N，默认 N)"
+    } catch {
+        $ans = 'n'
+    }
+    if ($ans -match '^[Yy]') { $removeData = $true }
+}
+if ($removeData) {
+    if (-not (Test-Path -LiteralPath $dataHome)) {
+        Write-Host "[$AppName] 用户数据目录不存在，无需删除: $dataHome"
+    } elseif (-not (Test-Path -LiteralPath $dataHome -PathType Container)) {
+        Write-Host "[$AppName] 已跳过删除：DSH_HOME 指向的不是目录（$dataHome），请手动处理。"
+    } else {
+        # 删除护栏：目标必须为目录、非盘符根，且叶子名为 .dsh 或位于用户目录之下，
+        # 防止 DSH_HOME 被误设为危险路径（如 C:\ 或用户根目录本身）时递归删除造成破坏
+        $full    = $null
+        try { $full = [System.IO.Path]::GetFullPath($dataHome) } catch {}
+        $upRoot  = if ($env:USERPROFILE) { $env:USERPROFILE.TrimEnd('\') } else { $null }
+        $leafOk  = ($full -and ((Split-Path $full -Leaf) -eq '.dsh'))
+        $underUp = ($full -and $upRoot -and $full.StartsWith($upRoot + '\', [System.StringComparison]::OrdinalIgnoreCase))
+        $isRoot  = ($full -and ($full.TrimEnd('\') -match '^[A-Za-z]:$'))
+        if ($isRoot -or $full -eq $upRoot -or -not ($leafOk -or $underUp)) {
+            Write-Host "[$AppName] 已跳过删除：DSH_HOME 路径异常（$dataHome），请确认后手动处理。"
+        } else {
+            Remove-Item -LiteralPath $full -Recurse -Force -ErrorAction SilentlyContinue
+            if (Test-Path -LiteralPath $full) {
+                Write-Host "[$AppName] 警告：部分用户数据未能删除（可能被占用），请稍后手动删除: $full"
+            } else {
+                Write-Host "[$AppName] 已删除用户数据目录: $full"
+            }
+        }
+    }
+} else {
+    Write-Host "[$AppName] 已保留用户数据目录: $dataHome（对话记录与配置文件）"
+}
+
+# 7) 完成提示
 Write-Host "[$AppName] 卸载完成。"
 Show-Message -Text "卸载完成！`n`n已停止服务器、删除快捷方式与安装文件，并清理 npx 缓存中的 dsh。"
+exit 0

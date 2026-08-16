@@ -59,13 +59,48 @@ try {
     #    通过 npx 下载 / 校验包（下载到 npx 缓存）；启动时 npx 会再次检查并自动更新。
     #    成败只以 npx 退出码为准：npx 向 stderr 输出的警告（npm WARN 等）不代表失败。
     Write-Host "[$AppName] 正在通过 npx 安装 $Package （首次会自动下载到 npx 缓存）..."
+    Write-Host "[$AppName] 下载可能需要几分钟（取决于网速），下方进度点会持续刷新，请勿关闭本窗口..."
     # 局部放宽 EAP：Windows PowerShell 5.1 在 EAP=Stop 时会把原生命令的 stderr
     # 输出升级为终止性 NativeCommandError，导致安装被误判失败
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $npxTimeout = $false
     try {
-        & npx -y $Package --version | Out-Null
-        $npxExit = $LASTEXITCODE
+        # 后台执行 npx 并轮询进度，避免长时间无输出被误认为卡住。
+        # 注：不用 Start-Process（重定向场景下其 PassThru 对象读不到 ExitCode，
+        #     为 Windows PowerShell 5.1 已知问题），改用 .NET Process。
+        $npxCmd = @(Get-Command 'npx' -CommandType Application -ErrorAction SilentlyContinue)[0].Source
+        if (-not $npxCmd) { throw '未找到 npx 命令，请重新安装 Node.js。' }
+        $npxPsi = New-Object System.Diagnostics.ProcessStartInfo
+        $npxPsi.FileName               = $npxCmd
+        $npxPsi.Arguments              = "-y $Package --version"
+        $npxPsi.UseShellExecute        = $false
+        $npxPsi.RedirectStandardOutput = $true
+        $npxPsi.RedirectStandardError  = $true
+        $npxPsi.CreateNoWindow         = $true
+        $p = [System.Diagnostics.Process]::Start($npxPsi)
+        # 异步排空输出流，防止子进程因管道写满而阻塞（保留 Task 引用）
+        $oTask = $p.StandardOutput.ReadToEndAsync()
+        $eTask = $p.StandardError.ReadToEndAsync()
+        $total = 0
+        while (-not $p.WaitForExit(2000)) {
+            $total += 2
+            Write-Host -NoNewline '.'
+            if ($total % 30 -eq 0) {
+                Write-Host ''
+                Write-Host ("[{0}] 仍在下载/校验 dsh… 已等待 {1} 秒，属正常现象，请继续等待。" -f $AppName, $total)
+            }
+            # 硬超时保护：超过 10 分钟仍未完成，终止并报错（网络可能已断开）
+            if ($total -ge 600) {
+                $npxTimeout = $true
+                # taskkill /T 连同子进程（node 等）一并终止，避免孤儿进程继续占用网络
+                $null = & "$env:windir\System32\taskkill.exe" /PID $p.Id /T /F 2>$null
+                if (-not $p.HasExited) { try { $p.Kill() } catch {} }
+                break
+            }
+        }
+        Write-Host ''
+        if ($npxTimeout) { $npxExit = 1 } else { $npxExit = $p.ExitCode }
         # npx 缓存根：优先读 npm 实际配置（支持自定义 cache 路径），读不到回退默认位置
         $cacheRoot = Join-Path $env:LOCALAPPDATA 'npm-cache'
         $cfgCache  = & npm config get cache 2>$null
@@ -75,6 +110,10 @@ try {
         }
     } finally {
         $ErrorActionPreference = $prevEap
+    }
+    if ($npxTimeout) {
+        Show-Message -Text "DeepSeek Harness 安装超时（等待 600 秒未完成）。`n请检查网络连接后重试；若网络正常，重新运行安装可续传/复用已下载缓存。" -Kind 'Error'
+        exit 1
     }
     if ($npxExit -ne 0) {
         Show-Message -Text "DeepSeek Harness 安装失败（npx 退出码 $npxExit）。`n请检查网络连接后重试。" -Kind 'Error'
@@ -92,9 +131,13 @@ try {
 
     # 3) 复制文件到安装目录
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'DSH Manager.bat', 'DSH-Manager.ps1', 'uninstall.ps1', 'README.md') {
+    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'DSH Manager.bat', 'DSH-Manager.ps1', 'install.ps1', 'stop.ps1', 'uninstall.ps1', 'README.md') {
         $src = Join-Path $ScriptDir $f
-        if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $InstallDir -Force }
+        $dst = Join-Path $InstallDir $f
+        # 跳过源==目标（在安装目录内重跑 install 时自身复制会报错）
+        if (Test-Path -LiteralPath $src -and -not [string]::Equals($src, $dst, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -LiteralPath $src -Destination $InstallDir -Force
+        }
     }
     Write-Host "[$AppName] 文件已安装到: $InstallDir"
 
@@ -131,3 +174,4 @@ try {
     Show-Message -Text ("安装失败：`n" + $_.Exception.Message) -Kind 'Error'
     exit 1
 }
+exit 0

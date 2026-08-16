@@ -112,6 +112,7 @@ if (Test-PortListening -TargetPort $Port) {
     # 固定工作目录到安装目录（不存在时回退用户目录），避免继承调用方 cwd
     $workDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) $AppName
     if (-not (Test-Path -LiteralPath $workDir)) { $workDir = $env:USERPROFILE }
+    Write-Host "[DSH] 正在启动服务器…首次启动需联网下载/更新 dsh 包（视网速可能需要几分钟），期间请勿关闭本窗口。"
     try {
         $serverProc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $startLine -WorkingDirectory $workDir -PassThru
     } catch {
@@ -122,6 +123,7 @@ if (Test-PortListening -TargetPort $Port) {
     # 2) 等待端口就绪
     #    - 启动进程提前退出（npx 下载失败 / 命令出错）→ 立即报错，不必空等
     #    - 首次 npx 下载可能较慢，最多等待 $TimeoutS 秒（默认 600）
+    #    - 每 10 秒打印一次进度提示，避免用户误以为卡住
     $waited = 0
     while (-not (Test-PortListening -TargetPort $Port)) {
         Start-Sleep -Seconds 1
@@ -133,6 +135,9 @@ if (Test-PortListening -TargetPort $Port) {
         if ($waited -ge $TimeoutS) {
             Show-Message -Text "服务器在 ${TimeoutS} 秒内未能启动（首次 npx 下载可能较慢）。`n可稍后重新运行启动，或查看 “DSH Web Server” 窗口中的错误信息。" -Kind 'Error'
             exit 1
+        }
+        if ($waited % 10 -eq 0) {
+            Write-Host "[DSH] 仍在等待服务器就绪… 已等待 ${waited}s / 最多 ${TimeoutS}s（首次启动需下载 dsh 包，属正常现象）"
         }
     }
     Write-Host "[DSH] 服务器已就绪（约 ${waited}s）。"
@@ -148,3 +153,4 @@ try {
 }
 
 Write-Host "[DSH] 完成。"
+exit 0

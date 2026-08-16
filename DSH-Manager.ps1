@@ -42,6 +42,27 @@ function Get-StatusLine {
     return $line
 }
 
+# ---------------------------------------------------------------------------
+# 带超时的"按任意键返回"：既支持立即按键返回（含回车），也支持等待超时后自动返回
+# 用 [Console]::KeyAvailable 轮询实现（PS 5.1 可用），避免 Read-Host 无限阻塞
+# ---------------------------------------------------------------------------
+function Wait-KeyOrTimeout {
+    param([int]$Seconds = 3)
+    try {
+        $deadline = [Environment]::TickCount + ($Seconds * 1000)
+        while ([Environment]::TickCount -lt $deadline) {
+            if ([Console]::KeyAvailable) {
+                $null = [Console]::ReadKey($true)
+                return
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    } catch {
+        # 非交互环境（管道/重定向）下 KeyAvailable 不可用，退回 Read-Host
+        Read-Host "按回车继续"
+    }
+}
+
 function Show-Usage {
     Write-Host ""
     Write-Host "用法: DSH Manager.bat [命令] [参数]"
@@ -62,12 +83,17 @@ if ($args.Count -gt 0) {
     $rest = @($args | Select-Object -Skip 1)
     switch ($cmd.ToLower()) {
         'start' {
+            if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'DSH-Launcher.ps1'))) {
+                Write-Host "未检测到 DeepSeek Harness 安装，无法启动。"
+                Write-Host "请先执行安装：DSH Manager.bat install（或菜单选择 [3] 安装/修复）。"
+                exit 1
+            }
             & (Join-Path $ScriptDir 'DSH-Launcher.ps1') @rest
             exit $LASTEXITCODE
         }
         'stop' {
             & (Join-Path $ScriptDir 'stop.ps1') @rest
-            exit 0
+            exit $LASTEXITCODE
         }
         'install' {
             & (Join-Path $ScriptDir 'install.ps1') @rest
@@ -75,7 +101,7 @@ if ($args.Count -gt 0) {
         }
         'uninstall' {
             & (Join-Path $ScriptDir 'uninstall.ps1') @rest
-            exit 0
+            exit $LASTEXITCODE
         }
         'menu' { }
         default {
@@ -103,7 +129,14 @@ if ($args.Count -gt 0) {
     Write-Host "===================================="
     $choice = Read-Host "请选择"
     switch ($choice) {
-        '1' { & (Join-Path $ScriptDir 'DSH-Launcher.ps1') }
+        '1' {
+            if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'DSH-Launcher.ps1'))) {
+                Write-Host "未检测到 DeepSeek Harness 安装，无法启动。"
+                Write-Host "请先选择 [3] 安装/修复（安装运行文件并创建桌面快捷方式）后再启动。"
+            } else {
+                & (Join-Path $ScriptDir 'DSH-Launcher.ps1')
+            }
+        }
         '2' { & (Join-Path $ScriptDir 'stop.ps1') }
         '3' { & (Join-Path $ScriptDir 'install.ps1') }
         '4' { & (Join-Path $ScriptDir 'uninstall.ps1') }
@@ -111,6 +144,7 @@ if ($args.Count -gt 0) {
         default { Write-Host "无效选择，请输入 1-5。" }
     }
     Write-Host ""
-    Read-Host "按回车返回菜单"
+    Write-Host "（按回车立即返回菜单，或等待 3 秒自动返回…）"
+    Wait-KeyOrTimeout
 }
 exit 0
