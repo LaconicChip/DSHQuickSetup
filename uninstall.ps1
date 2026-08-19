@@ -1,11 +1,11 @@
 ﻿# ============================================================================
 #  DeepSeek Harness 卸载脚本
 #  作用：
-#    1. 停止正在运行的 DSH Web 服务器（端口 3080）
+#    1. 彻底停止正在运行的 DSH（终止 dsh 相关整棵进程树，端口 3080）
 #    2. 清理 dsh 相关安装产物：npx 缓存条目 + 旧版全局包（若存在）
 #    3. 删除桌面快捷方式 “DeepSeek Harness”
 #    4. 删除安装目录 %LOCALAPPDATA%\DeepSeek Harness
-#    5. 清理 npx 缓存中的 dsh 条目（尽力而为；卸载开始时正被进程占用的条目会跳过）
+#    5. 清理 npx 缓存中的 dsh 条目（此时 dsh 已停止，可完整清理）
 #
 #  用法： 双击 uninstall.bat，或在 PowerShell 中执行本脚本
 #         支持参数：-Force （跳过确认询问，供静默卸载）
@@ -43,7 +43,7 @@ Write-Host "[$AppName] 开始卸载..."
 # 0) 确认（除非 -Force）
 if (-not $Force) {
     try {
-        $ans = Read-Host "将停止服务器、卸载 dsh（清理 npx 缓存与旧版全局包）并删除全部文件。`n确定继续吗？(Y/N)"
+        $ans = Read-Host "将停止运行中进程、卸载 DSH。`n确定继续吗？(Y/N)"
     } catch {
         $ans = 'n'
     }
@@ -72,10 +72,7 @@ function Get-PortPids {
     } | Sort-Object -Unique)
 }
 
-# 0.5) 在停服之前捕获“正在被进程占用的 npx 缓存目录”。
-#      必须在停服前捕获：第 1 步会杀掉 dsh 服务器，若服务器正从 npx 缓存运行，
-#      停服后实时占用检测就会失效，导致误删正在使用的 harness 运行环境。
-# npx 缓存根：优先读 npm 实际配置（支持自定义 cache 路径），读不到回退默认位置
+# 定位 npx 缓存根：优先读 npm 实际配置（支持自定义 cache 路径），读不到回退默认位置
 $npxRoot = Join-Path $env:LOCALAPPDATA 'npm-cache\_npx'
 if (Get-Command 'npm' -ErrorAction SilentlyContinue) {
     $cfgCache = & npm config get cache 2>$null
@@ -84,20 +81,24 @@ if (Get-Command 'npm' -ErrorAction SilentlyContinue) {
         if ($cfgCache) { $npxRoot = Join-Path $cfgCache '_npx' }
     }
 }
-$inUseCacheDirs = @()
-if (Test-Path -LiteralPath $npxRoot) {
-    $inUseCacheDirs = @(Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-        $dirPath = $_.FullName
-        $used = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-            Where-Object {
-                ($_.ExecutablePath -and $_.ExecutablePath -like "$dirPath*") -or
-                ($_.CommandLine -and $_.CommandLine.IndexOf($dirPath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
-            }
-        if ($used) { $dirPath }
-    })
-}
 
-# 1) 停止服务器（端口 3080，命令行含 dsh 的进程）
+# 1) 彻底停止所有 dsh 相关进程（整棵进程树）。
+#    仅终止 3080 端口监听进程不够：dsh 通过 cmd → npx → node 启动，
+#    其子进程仍会占用安装目录（工作目录）与 npx 缓存的句柄，
+#    导致卸载删不干净。这里按命令行匹配 dsh 启动链路，
+#    用 taskkill /T 递归终止整棵进程树，再稍等句柄释放。
+$dshProc = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object {
+        $cl = $_.CommandLine
+        ($cl -and (($cl -like '*DSH-Launcher.ps1*') -or ($cl -like '*@deepseek-ai/dsh*')))
+    }
+foreach ($p in $dshProc) {
+    $null = & "$env:windir\System32\taskkill.exe" /PID $p.ProcessId /T /F 2>$null
+    Write-Host "[$AppName] 已终止 DSH 相关进程 (PID $p.ProcessId)"
+}
+Start-Sleep -Seconds 1
+
+# 1.5) 兜底：若端口 3080 仍有监听（启动方式未命中上述规则），按原规则处理
 $pids = Get-PortPids 3080
 foreach ($procId in $pids) {
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId = $procId" -ErrorAction SilentlyContinue
@@ -107,7 +108,7 @@ foreach ($procId in $pids) {
     } elseif ($proc) {
         Write-Host "[$AppName] 端口 3080 被非 DSH 进程占用 (PID $procId)，已跳过。"
     } else {
-        Write-Host "[$AppName] 端口 3080 上的进程 (PID $procId) 无法读取信息，跳过（请确认是否为 dsh 服务器）"
+        Write-Host "[$AppName] 端口 3080 上的进程 (PID $procId) 无法读取信息，跳过（请自行确认是否为 DSH 服务器）"
     }
 }
 
@@ -144,18 +145,18 @@ if (Test-Path -LiteralPath $InstallDir) {
     Write-Host "[$AppName] 安装目录不存在，跳过"
 }
 
-# 5) 清理 npx 缓存中的 dsh 条目（尽力而为；
-#    卸载开始时正被进程占用的条目跳过，避免破坏正在运行的 dsh）
+# 5) 清理 npx 缓存中的 dsh 条目（此时 dsh 已停止，缓存可安全完整删除；
+#    少数被其它进程占用而无法删除的条目会保留并提示）
 if (Test-Path -LiteralPath $npxRoot) {
     Get-ChildItem -LiteralPath $npxRoot -Directory -ErrorAction SilentlyContinue | ForEach-Object {
         $pkgPath = Join-Path $_.FullName "node_modules\$Package"
         if (-not (Test-Path -LiteralPath $pkgPath)) { return }
-        if ($inUseCacheDirs -contains $_.FullName) {
-            Write-Host "[$AppName] 跳过清理 npx 缓存条目 $($_.Name)（卸载开始时正在被进程使用，避免破坏运行中的 dsh）。"
-            return
-        }
         Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "[$AppName] 已清理 npx 缓存条目: $($_.Name)"
+        if (Test-Path -LiteralPath $_.FullName) {
+            Write-Host "[$AppName] 警告：npx 缓存条目 $($_.Name) 仍被占用未能删除，请稍后手动清理。"
+        } else {
+            Write-Host "[$AppName] 已清理 npx 缓存条目: $($_.Name)"
+        }
     }
 }
 
@@ -170,7 +171,7 @@ if (-not $Force) {
     Write-Host "  - 删除：可释放磁盘空间，但历史会话与个性化设置将无法恢复。"
     Write-Host "  - 保留：重新安装后可继续使用原有会话与设置（推荐）。"
     try {
-        $ans = Read-Host "确定删除用户数据吗？(y/N，默认 N)"
+        $ans = Read-Host "确定删除用户数据吗？(Y/N，默认 N)"
     } catch {
         $ans = 'n'
     }
@@ -207,5 +208,5 @@ if ($removeData) {
 
 # 7) 完成提示
 Write-Host "[$AppName] 卸载完成。"
-Show-Message -Text "卸载完成！`n`n已停止服务器、删除快捷方式与安装文件，并清理 npx 缓存中的 dsh。"
+Show-Message -Text "卸载完成！`n`n已删除快捷方式与DSH安装文件。"
 exit 0

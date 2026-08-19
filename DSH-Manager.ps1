@@ -127,12 +127,12 @@ if ($args.Count -gt 0) {
     Write-Host "  [4] 卸载"
     Write-Host "  [5] 退出"
     Write-Host "===================================="
-    $choice = Read-Host "请选择"
+    $choice = Read-Host "请输入数字以选择"
     switch ($choice) {
         '1' {
             if (-not (Test-Path -LiteralPath (Join-Path $InstallDir 'DSH-Launcher.ps1'))) {
                 Write-Host "未检测到 DeepSeek Harness 安装，无法启动。"
-                Write-Host "请先选择 [3] 安装/修复（安装运行文件并创建桌面快捷方式）后再启动。"
+                Write-Host "请先选择 [3] 安装/修复 后再启动。"
             } else {
                 & (Join-Path $ScriptDir 'DSH-Launcher.ps1')
             }
@@ -144,7 +144,7 @@ if ($args.Count -gt 0) {
         default { Write-Host "无效选择，请输入 1-5。" }
     }
     Write-Host ""
-    Write-Host "（按回车立即返回菜单，或等待 3 秒自动返回…）"
+    Write-Host "（3 秒后自动返回，或按回车立即返回菜单…）"
     Wait-KeyOrTimeout
 }
 exit 0

@@ -50,7 +50,7 @@ try {
         exit 1
     }
     if (-not $npm) {
-        Show-Message -Text "未检测到 npm。`n请重新安装 Node.js（安装包自带 npm）。" -Kind 'Error'
+        Show-Message -Text "未检测到 npm。`n请重新安装 Node.js (LTS)：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
         exit 1
     }
     Write-Host "[$AppName] Node.js: $(& node --version)   npm: $(& npm --version)"
@@ -58,8 +58,7 @@ try {
     # 2) 安装 DeepSeek Harness（npx 方式，始终最新）
     #    通过 npx 下载 / 校验包（下载到 npx 缓存）；启动时 npx 会再次检查并自动更新。
     #    成败只以 npx 退出码为准：npx 向 stderr 输出的警告（npm WARN 等）不代表失败。
-    Write-Host "[$AppName] 正在通过 npx 安装 $Package （首次会自动下载到 npx 缓存）..."
-    Write-Host "[$AppName] 下载可能需要几分钟（取决于网速），下方进度点会持续刷新，请勿关闭本窗口..."
+    Write-Host "[$AppName] Downloading $Package ..."
     # 局部放宽 EAP：Windows PowerShell 5.1 在 EAP=Stop 时会把原生命令的 stderr
     # 输出升级为终止性 NativeCommandError，导致安装被误判失败
     $prevEap = $ErrorActionPreference
@@ -85,10 +84,9 @@ try {
         $total = 0
         while (-not $p.WaitForExit(2000)) {
             $total += 2
-            Write-Host -NoNewline '.'
-            if ($total % 30 -eq 0) {
-                Write-Host ''
-                Write-Host ("[{0}] 仍在下载/校验 dsh… 已等待 {1} 秒，属正常现象，请继续等待。" -f $AppName, $total)
+            # 每 10 秒打一个进度点，避免长时间无输出被误认为卡住
+            if ($total % 10 -eq 0) {
+                Write-Host -NoNewline '.'
             }
             # 硬超时保护：超过 10 分钟仍未完成，终止并报错（网络可能已断开）
             if ($total -ge 600) {
@@ -112,7 +110,7 @@ try {
         $ErrorActionPreference = $prevEap
     }
     if ($npxTimeout) {
-        Show-Message -Text "DeepSeek Harness 安装超时（等待 600 秒未完成）。`n请检查网络连接后重试；若网络正常，重新运行安装可续传/复用已下载缓存。" -Kind 'Error'
+        Show-Message -Text "DeepSeek Harness 安装超时。`n请检查网络连接后重试；若网络正常，重新运行安装可续传/复用已下载缓存。" -Kind 'Error'
         exit 1
     }
     if ($npxExit -ne 0) {
@@ -129,18 +127,41 @@ try {
     }
     Write-Host "[$AppName] 安装完成（npx 缓存：$($cached.Name)）。"
 
-    # 3) 复制文件到安装目录
+    # 3) 复制文件到安装目录，并维护一份干净备份（_dsh_backup），
+    #    供“安装/修复”真正恢复被损坏的文件。
+    #    关键：当从安装目录内运行本脚本时（src==dst），源即目标，
+    #    无法自修复，因此改用备份中的干净副本覆盖已损坏文件。
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    foreach ($f in 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'DSH Manager.bat', 'DSH-Manager.ps1', 'install.ps1', 'stop.ps1', 'uninstall.ps1', 'README.md') {
+    $backupDir = Join-Path $InstallDir '_dsh_backup'
+    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+    $files = 'DSH-Launcher.ps1', 'DSH-whale-official.ico', 'DSH Manager.bat', 'DSH-Manager.ps1', 'install.ps1', 'stop.ps1', 'uninstall.ps1', 'README.md'
+    foreach ($f in $files) {
         $src = Join-Path $ScriptDir $f
         $dst = Join-Path $InstallDir $f
-        # 跳过源==目标（在安装目录内重跑 install 时自身复制会报错）
-        # 注：Test-Path 需用括号括起作为独立子表达式，否则 PS 5.1 会把 -and 误解析为参数
-        if ((Test-Path -LiteralPath $src) -and -not [string]::Equals($src, $dst, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $bak = Join-Path $backupDir $f
+        $isSelf = [string]::Equals($src, $dst, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($isSelf) {
+            # 从安装目录运行（修复模式）：源即目标，无法自修复；
+            # 用备份覆盖被损坏的文件。install.ps1 自身正在执行，跳过其自覆盖。
+            if ($f -ne 'install.ps1' -and (Test-Path -LiteralPath $bak)) {
+                Copy-Item -LiteralPath $bak -Destination $dst -Force
+                Write-Host "[$AppName] 已从备份恢复: $f"
+            }
+        }
+        elseif (Test-Path -LiteralPath $src) {
+            # 常规安装/修复（从发行包所在目录运行）：源为干净副本，
+            # 覆盖安装目录，并同步刷新备份。
             Copy-Item -LiteralPath $src -Destination $InstallDir -Force
+            Copy-Item -LiteralPath $src -Destination $backupDir -Force
+            Write-Host "[$AppName] 已写入: $f"
+        }
+        elseif (Test-Path -LiteralPath $bak) {
+            # 源缺失时回退备份（容错性兜底）
+            Copy-Item -LiteralPath $bak -Destination $dst -Force
+            Write-Host "[$AppName] 已从备份恢复（源缺失）: $f"
         }
     }
-    Write-Host "[$AppName] 文件已安装到: $InstallDir"
+    Write-Host "[$AppName] 文件与修复备份已就绪: $InstallDir"
 
     # 4) 创建桌面快捷方式
     $desktop = [Environment]::GetFolderPath('Desktop')
@@ -157,12 +178,12 @@ try {
 
     # 5) 完成提示
     Write-Host "[$AppName] 安装完成！启动命令：npx @deepseek-ai/dsh web"
-    Show-Message -Text "安装完成！`n`n桌面已创建 “$AppName” 快捷方式，双击即可启动。`n`n启动命令：npx @deepseek-ai/dsh web`n安装位置：$InstallDir"
+    Show-Message -Text "安装完成！`n`n已创建桌面快捷方式 “$AppName” 。`n`n启动命令：npx @deepseek-ai/dsh web`n安装位置：$InstallDir"
 
     # 6) 询问是否立即启动
     if (-not $SkipStart) {
         try {
-            $ans = Read-Host "是否立即启动 DeepSeek Harness？(Y/N，默认 N)"
+            $ans = Read-Host "是否立即启动 DeepSeek Harness？(Y/N)"
         } catch {
             $ans = 'n'
         }

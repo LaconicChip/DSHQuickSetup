@@ -101,9 +101,9 @@ if (Test-PortListening -TargetPort $Port) {
     } elseif ($npx) {
         # -PreferGlobal 但未找到全局 dsh：回退 npx
         $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
-        Write-Host "[DSH] 未找到全局 dsh，改用：npx -y @deepseek-ai/dsh web"
+        Write-Host "[DSH] 未找到全局 DSH，改用：npx -y @deepseek-ai/dsh web"
     } else {
-        Show-Message -Text "未找到 npx 或 dsh。`n请先安装 Node.js：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
+        Show-Message -Text "未找到 npx 或 DSH。`n请先安装 Node.js：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
         exit 1
     }
 
@@ -112,18 +112,18 @@ if (Test-PortListening -TargetPort $Port) {
     # 固定工作目录到安装目录（不存在时回退用户目录），避免继承调用方 cwd
     $workDir = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) $AppName
     if (-not (Test-Path -LiteralPath $workDir)) { $workDir = $env:USERPROFILE }
-    Write-Host "[DSH] 正在启动服务器…首次启动需联网下载/更新 dsh 包（视网速可能需要几分钟），期间请勿关闭本窗口。"
+    Write-Host "[DSH] 正在启动服务器，请稍候…（首次需联网下载更新 DSH 包，请勿关闭本窗口）"
     try {
         $serverProc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $startLine -WorkingDirectory $workDir -PassThru
     } catch {
-        Show-Message -Text ("启动 dsh web 失败：`n" + $_.Exception.Message) -Kind 'Error'
+        Show-Message -Text ("启动 DSH web 失败：`n" + $_.Exception.Message) -Kind 'Error'
         exit 1
     }
 
     # 2) 等待端口就绪
     #    - 启动进程提前退出（npx 下载失败 / 命令出错）→ 立即报错，不必空等
     #    - 首次 npx 下载可能较慢，最多等待 $TimeoutS 秒（默认 600）
-    #    - 每 10 秒打印一次进度提示，避免用户误以为卡住
+    #    - 每 10 秒打一个进度点，避免用户误以为卡住
     $waited = 0
     while (-not (Test-PortListening -TargetPort $Port)) {
         Start-Sleep -Seconds 1
@@ -137,9 +137,10 @@ if (Test-PortListening -TargetPort $Port) {
             exit 1
         }
         if ($waited % 10 -eq 0) {
-            Write-Host "[DSH] 仍在等待服务器就绪… 已等待 ${waited}s / 最多 ${TimeoutS}s（首次启动需下载 dsh 包，属正常现象）"
+            Write-Host -NoNewline '.'
         }
     }
+    Write-Host ''
     Write-Host "[DSH] 服务器已就绪（约 ${waited}s）。"
 }
 

@@ -44,7 +44,7 @@ foreach ($procId in $pids) {
     } elseif ($proc) {
         Write-Host "[$AppName] 端口 $Port 被非 DSH 进程占用 (PID $procId)，已跳过。如需释放端口请手动处理该进程。"
     } else {
-        Write-Host "[$AppName] 端口 $Port 上的进程 (PID $procId) 无法读取信息，跳过（请确认是否为 dsh 服务器）"
+        Write-Host "[$AppName] 端口 $Port 上的进程 (PID $procId) 无法读取信息，跳过（请确认是否为 DSH 服务器）"
     }
 }
 
