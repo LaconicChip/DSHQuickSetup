@@ -58,8 +58,8 @@
 
 ## ⚙️ 工作原理
 
-- **启动命令（自动更新）**：默认使用 `npx -y @deepseek-ai/dsh web`——每次启动都会向 npm registry 检查并**自动更新到最新版**，适合快速迭代的项目。若需要更快、可离线的固定版本，可用 `-PreferGlobal` 改用已全局安装的 `dsh web`（`DSH Manager.bat start -PreferGlobal`），或当 npx 不可用时自动回退全局 dsh。
-- **安装方式（同样 npx）**：安装通过 `npx -y @deepseek-ai/dsh --version` 下载并校验 dsh 到 npx 缓存（非阻塞、立即返回），**不安装全局固定版本**——保证安装与启动统一走 npx、始终最新。
+- **启动命令（自动更新）**：默认使用 `npx @deepseek-ai/dsh web`——每次启动都会向 npm registry 检查并**自动更新到最新版**，适合快速迭代的项目。若需要更快、可离线的固定版本，可用 `-PreferGlobal` 改用已全局安装的 `dsh web`（`DSH Manager.bat start -PreferGlobal`），或当 npx 不可用时自动回退全局 dsh。
+- **安装方式（同样 npx）**：安装通过 `npx @deepseek-ai/dsh web --version` 下载并校验 dsh 到 npx 缓存（非阻塞、立即返回），**不安装全局固定版本**——保证安装与启动统一走 npx、始终最新。
 - **端口检测**：基于 TCP 连接测试检测 `127.0.0.1:3080`（比系统网络 cmdlet 更可靠，受限环境下依然有效）。
 - **等待机制**：服务器在独立控制台窗口（标题 "DSH Web Server"）中运行，服务停止后窗口自动关闭；启动进程提前退出（如 npx 下载失败）时立即报错，无需等待超时。
 - **超时设置**：默认等待 600 秒，可自定义：`DSH Manager.bat start -TimeoutS 1800`。
@@ -84,7 +84,7 @@ A：检查 3080 端口是否被其它程序占用（`netstat -ano | findstr :308
 A：首次运行需下载 dsh 包，与网速相关；启动器默认最多等待 600 秒，可调大：`DSH Manager.bat start -TimeoutS 1800`。
 
 **Q：如何保证用的是最新版 dsh？**
-A：启动器默认用 `npx -y @deepseek-ai/dsh web`，每次启动都会检查并自动更新到最新版。若你更看重速度/离线可用而接受固定版本，加 `-PreferGlobal` 改用全局安装的 dsh。
+A：启动器默认用 `npx @deepseek-ai/dsh web`，每次启动都会检查并自动更新到最新版。若你更看重速度/离线可用而接受固定版本，加 `-PreferGlobal` 改用全局安装的 dsh。
 
 **Q：卸载之后想重新使用？**
 A：重新 `DSH Manager.bat` 选 `[3]` 安装即可，全程幂等。

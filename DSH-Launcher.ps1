@@ -4,7 +4,7 @@
 #  功能：
 #    1. 检查 http://127.0.0.1:3080 是否已在运行
 #    2. 若未运行，自动执行启动命令：
-#         npx -y @deepseek-ai/dsh web      ← 默认，每次启动自动更新到最新版
+#         npx @deepseek-ai/dsh web      ← 默认，每次启动自动更新到最新版
 #       （可加 -PreferGlobal 改用已全局安装的 dsh web：更快、可离线，但版本固定）
 #    3. 在默认浏览器中打开 GUI
 #
@@ -85,7 +85,7 @@ if (Test-PortListening -TargetPort $Port) {
     Write-Host "[DSH] 未检测到运行中的 GUI，正在启动 DSH Web 服务器..."
 
     # 构造启动命令：
-    #   默认 → npx -y @deepseek-ai/dsh web：每次启动检查 registry 并自动更新到最新版
+    #   默认 → npx @deepseek-ai/dsh web：每次启动检查 registry 并自动更新到最新版
     #   （-PreferGlobal → 已全局安装的 dsh web：更快、可离线，但版本固定；
     #    无全局 dsh 或没有 npx 时自动回退）
     #   CommandType Application 只匹配 cmd.exe 可直接执行的形式（.cmd/.bat/.exe），
@@ -93,15 +93,15 @@ if (Test-PortListening -TargetPort $Port) {
     $npx = Get-Command 'npx' -CommandType Application -ErrorAction SilentlyContinue
     $dsh = Find-DshCommand
     if (-not $PreferGlobal -and $npx) {
-        $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
-        Write-Host "[DSH] 使用命令：npx -y @deepseek-ai/dsh web（自动更新到最新版）"
+        $startLine = 'title DSH Web Server && npx @deepseek-ai/dsh web'
+        Write-Host "[DSH] 使用命令：npx @deepseek-ai/dsh web（自动更新到最新版）"
     } elseif ($dsh) {
         $startLine = 'title DSH Web Server && "' + $dsh + '" web'
         Write-Host "[DSH] 使用命令：$dsh web（全局版本，不自动更新）"
     } elseif ($npx) {
         # -PreferGlobal 但未找到全局 dsh：回退 npx
-        $startLine = 'title DSH Web Server && npx -y @deepseek-ai/dsh web'
-        Write-Host "[DSH] 未找到全局 DSH，改用：npx -y @deepseek-ai/dsh web"
+        $startLine = 'title DSH Web Server && npx @deepseek-ai/dsh web'
+        Write-Host "[DSH] 未找到全局 DSH，改用：npx @deepseek-ai/dsh web"
     } else {
         Show-Message -Text "未找到 npx 或 DSH。`n请先安装 Node.js：`nhttps://nodejs.org/zh-cn/download" -Kind 'Error'
         exit 1
